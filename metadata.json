@@ -1,0 +1,5 @@
+{
+  "name": "Toon Gene Network",
+  "description": "A cartoon-style 3D visualization of gene interaction networks using Three.js and React.",
+  "requestFramePermissions": []
+}
