@@ -22,6 +22,7 @@ export const GeneCanvas: React.FC<GeneCanvasProps> = ({ data, config, onTooltipU
   const [sceneReady, setSceneReady] = useState(false);
   
   // --- 1. Refs & State ---
+  const isActiveRef = useRef<boolean>(true);  // 控制动画循环是否活跃
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -437,6 +438,7 @@ export const GeneCanvas: React.FC<GeneCanvasProps> = ({ data, config, onTooltipU
 
   // --- 6. Animation Loop ---
   const animate = () => {
+    if (!isActiveRef.current) return;  // 如果不活跃，停止循环
     reqIdRef.current = requestAnimationFrame(animate);
     let needsMatrixUpdate = false;
 
@@ -539,9 +541,12 @@ export const GeneCanvas: React.FC<GeneCanvasProps> = ({ data, config, onTooltipU
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // 确保动画循环是活跃的
+    isActiveRef.current = true;
+
     // Scene
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf0f4f8);
+    scene.background = new THREE.Color(0xf0f4f8);  // 浅灰背景
     sceneRef.current = scene;
 
     // Camera
@@ -567,6 +572,8 @@ export const GeneCanvas: React.FC<GeneCanvasProps> = ({ data, config, onTooltipU
     const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
     fillLight.position.set(-100, -50, -100);
     scene.add(fillLight);
+
+
     
     // Groups
     const labelGroup = new THREE.Group();
@@ -669,6 +676,7 @@ export const GeneCanvas: React.FC<GeneCanvasProps> = ({ data, config, onTooltipU
           canvasEl.removeEventListener('mousedown', handleMouseDown);
           canvasEl.removeEventListener('wheel', handleWheel);
       }
+      isActiveRef.current = false;  // 停止动画循环
       if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current);
       if (rendererRef.current) {
         rendererRef.current.dispose();
@@ -683,6 +691,8 @@ export const GeneCanvas: React.FC<GeneCanvasProps> = ({ data, config, onTooltipU
   // --- 8. Data & Mesh Generation Effect ---
   useEffect(() => {
       if (!sceneRef.current || !sceneReady) return;
+
+      console.log('Creating network with', data.nodes.length, 'nodes and', data.links.length, 'links');
 
       if (networkGroupRef.current) sceneRef.current.remove(networkGroupRef.current);
       if (labelGroupRef.current) labelGroupRef.current.clear();
@@ -780,9 +790,19 @@ export const GeneCanvas: React.FC<GeneCanvasProps> = ({ data, config, onTooltipU
       });
       
       nodeMeshRef.current = new THREE.InstancedMesh(sphereGeo, sphereMat, count);
+      nodeMeshRef.current.frustumCulled = false; // 禁用视锥裁剪
+      
+      const initDummy = new THREE.Object3D();
       geneNodesRef.current.forEach((node, i) => {
-          nodeMeshRef.current!.setColorAt(i, node.baseColor);
+        initDummy.position.copy(node.position);
+        initDummy.scale.set(node.currentScale, node.currentScale, node.currentScale);
+        initDummy.updateMatrix();
+        nodeMeshRef.current!.setMatrixAt(i, initDummy.matrix);
+        nodeMeshRef.current!.setColorAt(i, node.baseColor);
       });
+      nodeMeshRef.current.instanceMatrix.needsUpdate = true;
+      if (nodeMeshRef.current.instanceColor) nodeMeshRef.current.instanceColor.needsUpdate = true;
+      
       networkGroupRef.current.add(nodeMeshRef.current);
 
       const outlineMat = new THREE.MeshBasicMaterial({
@@ -790,6 +810,7 @@ export const GeneCanvas: React.FC<GeneCanvasProps> = ({ data, config, onTooltipU
           side: THREE.BackSide,
       });
       nodeOutlineMeshRef.current = new THREE.InstancedMesh(sphereGeo, outlineMat, count);
+      nodeOutlineMeshRef.current.frustumCulled = false; // 禁用视锥裁剪
       networkGroupRef.current.add(nodeOutlineMeshRef.current);
 
 
@@ -841,11 +862,17 @@ export const GeneCanvas: React.FC<GeneCanvasProps> = ({ data, config, onTooltipU
           networkGroupRef.current.add(coreArrowMeshRef.current);
       }
 
+      console.log('Calling updateInstanceMatrices, nodes:', geneNodesRef.current.length, 'nodeMesh:', !!nodeMeshRef.current);
+      if (geneNodesRef.current.length > 0) {
+          console.log('First node position:', geneNodesRef.current[0].position);
+      }
+      console.log('Scene children after network creation:', sceneRef.current?.children.length);
+      console.log('Network group children:', networkGroupRef.current?.children.length);
       updateInstanceMatrices();
       isTransitioningRef.current = true;
       
       // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, sceneReady]); 
+  }, [data, sceneReady]);
 
   // --- 9. Layout Mode Effect ---
   useEffect(() => {
@@ -930,5 +957,5 @@ export const GeneCanvas: React.FC<GeneCanvasProps> = ({ data, config, onTooltipU
 
   }, [config.topNodeColor, config.normalNodeColor, config.lineColor, config.hoverColor]);
 
-  return <div ref={containerRef} className="w-screen h-screen block" />;
+  return <div ref={containerRef} className="absolute inset-0 w-full h-full" />;
 };
